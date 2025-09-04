@@ -1,22 +1,11 @@
-# src/scraper.py
 import requests
 import pandas as pd
-from bs4 import BeautifulSoup
 
 class CouncilScraper:
-    """
-    Scraper for UK councils and their published spending datasets.
-    Includes full debug logging.
-    """
-
     MYSOCIETY_URL = "https://raw.githubusercontent.com/mysociety/uk-councils/master/data/councils.csv"
     CKAN_SEARCH_URL = "https://data.gov.uk/api/3/action/package_search?q="
 
     def get_known_councils(self):
-        """
-        Fetch the list of councils from mySociety.
-        Returns a list of council names.
-        """
         print("[DEBUG] Fetching council list from mySociety")
         try:
             r = requests.get(self.MYSOCIETY_URL, timeout=30)
@@ -30,10 +19,6 @@ class CouncilScraper:
             return []
 
     def find_spend_files_for_council(self, council_name):
-        """
-        Search data.gov.uk for council spending CSVs.
-        Returns a list of dicts with keys: url, title.
-        """
         print(f"[DEBUG] Searching datasets for council: {council_name}")
         try:
             q = f"{council_name} expenditure OR spend"
@@ -46,10 +31,7 @@ class CouncilScraper:
             for res in results:
                 for resource in res.get('resources', []):
                     if resource.get('format', '').lower() in ('csv', 'xls', 'xlsx'):
-                        files.append({
-                            'url': resource['url'],
-                            'title': resource.get('name', '')
-                        })
+                        files.append({'url': resource['url'], 'title': resource.get('name', '')})
             print(f"[DEBUG] Found {len(files)} spend files for {council_name}")
             return files
         except Exception as e:
@@ -57,9 +39,6 @@ class CouncilScraper:
             return []
 
     def download_dataframe(self, resource):
-        """
-        Download a CSV/XLS/XLSX resource into a DataFrame.
-        """
         url = resource.get('url')
         print(f"[DEBUG] Downloading resource: {url}")
         try:
