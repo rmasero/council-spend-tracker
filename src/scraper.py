@@ -1,6 +1,6 @@
 import requests
 import pandas as pd
-from io import StringIO
+from io import StringIO, BytesIO
 from pathlib import Path
 from bs4 import BeautifulSoup
 
@@ -9,7 +9,6 @@ ROOT = Path(__file__).resolve().parents[0]
 class CouncilScraper:
     """
     Scraper for UK councils and their published spending datasets.
-    Includes:
     - Primary source: mySociety CSV
     - Fallback: gov.uk "Find your local council" page
     - Full debug logging and raw CSV capture
@@ -21,13 +20,15 @@ class CouncilScraper:
 
     def get_known_councils(self):
         councils = []
-        # First attempt: mySociety CSV
+        # Attempt 1: mySociety CSV
         print("[DEBUG] Fetching council list from mySociety CSV")
         try:
             r = requests.get(self.MYSOCIETY_URL, timeout=30)
             r.raise_for_status()
-            raw_csv_path = ROOT.parent / "data/raw_councils.csv"
-            raw_csv_path.parent.mkdir(exist_ok=True)
+
+            data_dir = ROOT.parent / "data"
+            data_dir.mkdir(exist_ok=True)
+            raw_csv_path = data_dir / "raw_councils.csv"
             with open(raw_csv_path, "w", encoding="utf-8") as f:
                 f.write(r.text)
             print(f"[DEBUG] Saved raw council CSV to {raw_csv_path}")
@@ -43,16 +44,19 @@ class CouncilScraper:
         except Exception as e:
             print(f"[ERROR] Failed to fetch mySociety CSV: {e}")
 
-        # Fallback: scrape gov.uk if CSV fails or empty
+        # Fallback: gov.uk
         if not councils:
             print("[DEBUG] Falling back to scraping gov.uk")
             try:
                 r = requests.get(self.GOV_UK_URL, timeout=30)
                 r.raise_for_status()
                 soup = BeautifulSoup(r.text, "html.parser")
-                links = soup.select("a[href*='/local-council']")
+                # Select links to individual councils
+                links = soup.select("a[href*='/local-council/']")
                 councils = [link.get_text(strip=True) for link in links if link.get_text(strip=True)]
-                councils = list(set(councils))  # remove duplicates
+                # Remove generic page titles
+                councils = [c for c in councils if c.lower() not in ("local councils and services", "find your local council")]
+                councils = list(set(councils))  # deduplicate
                 print(f"[DEBUG] Retrieved {len(councils)} councils from gov.uk fallback")
             except Exception as e:
                 print(f"[ERROR] Failed gov.uk fallback: {e}")
@@ -90,7 +94,6 @@ class CouncilScraper:
             if url.endswith('.csv'):
                 df = pd.read_csv(StringIO(r.text))
             elif url.endswith(('.xls', '.xlsx')):
-                from io import BytesIO
                 df = pd.read_excel(BytesIO(r.content))
             else:
                 print(f"[WARN] Unsupported file format for {url}")
