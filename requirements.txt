@@ -1,0 +1,14 @@
+streamlit
+pandas
+pyarrow
+requests
+beautifulsoup4
+lxml
+openpyxl
+python-dateutil
+tqdm
+fsspec
+gitpython
+numpy
+scikit-learn
+st_aggrid
