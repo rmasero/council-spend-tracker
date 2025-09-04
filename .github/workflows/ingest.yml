@@ -2,7 +2,7 @@ name: Weekly Data Ingest
 
 on:
   schedule:
-    - cron: '0 3 * * 1'   # every Monday at 03:00 UTC
+    - cron: '0 3 * * 1'  # every Monday at 03:00 UTC
   workflow_dispatch:
 
 jobs:
@@ -11,6 +11,8 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GH_PAT }}   # ✅ use PAT to allow push
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -36,7 +38,5 @@ jobs:
           git add data/ || true
           git commit -m "Automated data refresh [skip ci]" || echo "No changes to commit"
 
-          # overwrite remote with PAT-based URL
           git remote set-url origin https://x-access-token:${GH_PAT}@github.com/${REPO}.git
-
           git push origin HEAD:$(git rev-parse --abbrev-ref HEAD)
