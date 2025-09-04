@@ -1,27 +1,34 @@
 import requests
 import pandas as pd
 from io import StringIO
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[0]
 
 class CouncilScraper:
     """
     Scraper for UK councils and their published spending datasets.
-    Includes full debug logging.
+    Includes full debug logging and raw CSV capture for troubleshooting.
     """
 
     MYSOCIETY_URL = "https://raw.githubusercontent.com/mysociety/uk-councils/master/data/councils.csv"
     CKAN_SEARCH_URL = "https://data.gov.uk/api/3/action/package_search?q="
 
     def get_known_councils(self):
-        """
-        Fetch the list of councils from mySociety.
-        Returns a list of council names.
-        """
         print("[DEBUG] Fetching council list from mySociety")
         try:
             r = requests.get(self.MYSOCIETY_URL, timeout=30)
             r.raise_for_status()
+
+            # Save raw CSV for inspection
+            data_dir = ROOT.parent / "data"
+            data_dir.mkdir(exist_ok=True)
+            raw_csv_path = data_dir / "raw_councils.csv"
+            with open(raw_csv_path, "w", encoding="utf-8") as f:
+                f.write(r.text)
+            print(f"[DEBUG] Saved raw council CSV to {raw_csv_path}")
+
             df = pd.read_csv(StringIO(r.text))
-            # Inspect columns to confirm
             print(f"[DEBUG] Columns in CSV: {df.columns.tolist()}")
             if 'name' in df.columns:
                 councils = df['name'].tolist()
@@ -37,10 +44,6 @@ class CouncilScraper:
             return []
 
     def find_spend_files_for_council(self, council_name):
-        """
-        Search data.gov.uk for council spending CSVs.
-        Returns a list of dicts with keys: url, title.
-        """
         print(f"[DEBUG] Searching datasets for council: {council_name}")
         try:
             q = f"{council_name} expenditure OR spend"
@@ -61,9 +64,6 @@ class CouncilScraper:
             return []
 
     def download_dataframe(self, resource):
-        """
-        Download a CSV/XLS/XLSX resource into a DataFrame.
-        """
         url = resource.get('url')
         print(f"[DEBUG] Downloading resource: {url}")
         try:
