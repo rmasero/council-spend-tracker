@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 class CouncilScraper:
     """
     Scraper for UK councils and their published spending datasets.
-    Includes debug logging.
+    Includes full debug logging.
     """
 
     MYSOCIETY_URL = "https://raw.githubusercontent.com/mysociety/uk-councils/master/data/councils.csv"
@@ -76,4 +76,5 @@ class CouncilScraper:
             print(f"[DEBUG] Downloaded {len(df)} rows from {url}")
             return df
         except Exception as e:
-            print(f
+            print(f"[ERROR] Failed to download {url}: {e}")
+            return None
