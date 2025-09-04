@@ -1,114 +1,79 @@
-import requests, io
+# src/scraper.py
+import requests
 import pandas as pd
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
-import re
 
 class CouncilScraper:
-    """Scraper to retrieve council spending data using authoritative sources first,
-    then heuristics as a fallback."""
+    """
+    Scraper for UK councils and their published spending datasets.
+    Includes debug logging.
+    """
 
-    DATA_GOV_API = 'https://ckan.publishing.service.gov.uk/api/3/action/'
-    MYSOCIETY_URL = 'https://pages.mysociety.org/uk_local_authority_names_and_codes/datasets/uk_la_past_current/latest/download.csv'
-
-    def __init__(self):
-        self.session = requests.Session()
-        self.common_extensions = ['.csv','.xls','.xlsx','.ods']
+    MYSOCIETY_URL = "https://raw.githubusercontent.com/mysociety/uk-councils/master/data/councils.csv"
+    CKAN_SEARCH_URL = "https://data.gov.uk/api/3/action/package_search?q="
 
     def get_known_councils(self):
-        """Fetch the authoritative list of councils from mySociety dataset."""
+        """
+        Fetch the list of councils from mySociety.
+        Returns a list of council names.
+        """
+        print("[DEBUG] Fetching council list from mySociety")
         try:
-            df = pd.read_csv(self.MYSOCIETY_URL)
-            councils = df[df['current_authority']==True]['official_name'].dropna().unique().tolist()
+            r = requests.get(self.MYSOCIETY_URL, timeout=30)
+            r.raise_for_status()
+            df = pd.read_csv(pd.compat.StringIO(r.text))
+            councils = df['name'].tolist()
+            print(f"[DEBUG] Retrieved {len(councils)} councils")
             return councils
         except Exception as e:
-            print(f"Failed to fetch council register: {e}")
+            print(f"[ERROR] Failed to fetch councils: {e}")
             return []
 
     def find_spend_files_for_council(self, council_name):
-        """Look for council spend datasets via data.gov.uk API, fallback to heuristics."""
-        results = []
+        """
+        Search data.gov.uk for council spending CSVs.
+        Returns a list of dicts with keys: url, title.
+        """
+        print(f"[DEBUG] Searching datasets for council: {council_name}")
         try:
-            params = {
-                'fq': f'title:"{council_name}"',
-                'rows': 100,
-                'q': 'spend OR expenditure OR payments'
-            }
-            r = self.session.get(self.DATA_GOV_API + 'package_search', params=params, timeout=20)
-            if r.status_code == 200:
-                js = r.json()
-                for res in js.get('result', {}).get('results', []):
-                    for resource in res.get('resources', []):
-                        fmt = resource.get('format','').lower()
-                        name = resource.get('name','').lower()
-                        if fmt in ['csv','xls','xlsx'] or 'spend' in name or 'payment' in name:
-                            results.append({
-                                'url': resource.get('url'),
-                                'source_page': res.get('title'),
-                                'anchor': resource.get('name') or res.get('title')
-                            })
-        except Exception as e:
-            print(f"data.gov.uk API lookup failed for {council_name}: {e}")
-
-        if not results:
-            # fallback heuristics
-            results = self.heuristic_find(council_name)
-        return results
-
-    def heuristic_find(self, council_name):
-        """Heuristic: guess common council transparency URLs and scrape for links."""
-        guesses = [
-            '/transparency/expenditure',
-            '/transparency/payments',
-            '/open-data/spend',
-            '/open-data',
-            '/downloads',
-            '/your-council/transparency'
-        ]
-        base = self.guess_council_base(council_name)
-        results = []
-        for g in guesses:
-            url = urljoin(base, g)
-            try:
-                r = self.session.get(url, timeout=15)
-                if r.status_code!=200:
-                    continue
-                soup = BeautifulSoup(r.text, 'lxml')
-                for a in soup.find_all('a', href=True):
-                    href = a['href']
-                    if any(href.lower().endswith(ext) for ext in self.common_extensions) or 'spend' in href.lower() or 'payments' in href.lower():
-                        full = urljoin(url, href)
-                        results.append({'url': full, 'source_page': url, 'anchor': a.get_text(strip=True)})
-            except Exception:
-                continue
-        # de-duplicate
-        seen, uniq = set(), []
-        for r in results:
-            if r['url'] in seen: continue
-            seen.add(r['url']); uniq.append(r)
-        return uniq
-
-    def guess_council_base(self, council_name):
-        name = council_name.lower().replace('city','').replace('council','').strip()
-        parts = name.split()
-        candidate = ''.join(parts)
-        return f'https://{candidate}.gov.uk'
-
-    def download_dataframe(self, filemeta):
-        url = filemeta.get('url')
-        try:
-            r = self.session.get(url, timeout=30)
+            q = f"{council_name} expenditure OR spend"
+            r = requests.get(self.CKAN_SEARCH_URL + q, timeout=30)
             r.raise_for_status()
-            content_type = r.headers.get('content-type','').lower()
-            if url.lower().endswith('.csv') or 'text/csv' in content_type:
-                return pd.read_csv(io.StringIO(r.text))
-            elif url.lower().endswith('.xls') or url.lower().endswith('.xlsx') or 'excel' in content_type:
-                return pd.read_excel(io.BytesIO(r.content))
-            else:
-                dfs = pd.read_html(r.text)
-                if dfs:
-                    return dfs[0]
-            return None
+            data = r.json()
+            results = data.get('result', {}).get('results', [])
+            print(f"[DEBUG] CKAN returned {len(results)} datasets for {council_name}")
+            files = []
+            for res in results:
+                for resource in res.get('resources', []):
+                    if resource.get('format', '').lower() in ('csv', 'xls', 'xlsx'):
+                        files.append({
+                            'url': resource['url'],
+                            'title': resource.get('name', '')
+                        })
+            print(f"[DEBUG] Found {len(files)} spend files for {council_name}")
+            return files
         except Exception as e:
-            print(f"Failed to download {url}: {e}")
-            return None
+            print(f"[ERROR] CKAN search failed for {council_name}: {e}")
+            return []
+
+    def download_dataframe(self, resource):
+        """
+        Download a CSV/XLS/XLSX resource into a DataFrame.
+        """
+        url = resource.get('url')
+        print(f"[DEBUG] Downloading resource: {url}")
+        try:
+            r = requests.get(url, timeout=30)
+            r.raise_for_status()
+            if url.endswith('.csv'):
+                df = pd.read_csv(pd.compat.StringIO(r.text))
+            elif url.endswith(('.xls', '.xlsx')):
+                from io import BytesIO
+                df = pd.read_excel(BytesIO(r.content))
+            else:
+                print(f"[WARN] Unsupported file format for {url}")
+                return None
+            print(f"[DEBUG] Downloaded {len(df)} rows from {url}")
+            return df
+        except Exception as e:
+            print(f
