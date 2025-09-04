@@ -8,14 +8,17 @@ on:
 jobs:
   ingest:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'   # ✅ upgraded from 3.10
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
@@ -25,10 +28,12 @@ jobs:
       - name: Run ingestion script
         run: python scripts/ingest.py
 
-      - name: Commit and push changes
+      - name: Commit processed data
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/
-          git commit -m "Weekly data ingest"
-          git push
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/ || true
+          git commit -m "Automated data refresh [skip ci]" || echo "No changes to commit"
+          git push https://x-access-token:${GH_PAT}@github.com/${{ github.repository }} HEAD:$(git rev-parse --abbrev-ref HEAD)
