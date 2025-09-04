@@ -8,12 +8,9 @@ on:
 jobs:
   ingest:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -21,19 +18,28 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
+        working-directory: ./CouncilSpendTracker
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Run ingestion script
+        working-directory: ./CouncilSpendTracker
         run: python scripts/ingest.py
 
-      - name: Commit processed data
+      - name: Commit and push changes
+        working-directory: ./CouncilSpendTracker
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
+          REPO: ${{ github.repository }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "council-spend-bot"
+          git config --global user.email "council-spend-bot@example.com"
+
           git add data/ || true
           git commit -m "Automated data refresh [skip ci]" || echo "No changes to commit"
-          git push https://x-access-token:${GH_PAT}@github.com/${{ github.repository }} HEAD:$(git rev-parse --abbrev-ref HEAD)
+
+          # ✅ overwrite remote with PAT-based URL
+          git remote set-url origin https://x-access-token:${GH_PAT}@github.com/${REPO}.git
+
+          git push origin HEAD:main
