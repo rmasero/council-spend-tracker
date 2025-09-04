@@ -2,17 +2,17 @@ name: Weekly Data Ingest
 
 on:
   schedule:
-    - cron: '0 3 * * 1'  # every Monday 03:00 UTC
+    - cron: '0 3 * * 1'
   workflow_dispatch:
 
 jobs:
   ingest:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo using PAT
+      - name: Checkout repo
         uses: actions/checkout@v3
         with:
-          token: ${{ secrets.GH_PAT }}   # ✅ must exist in repository secrets
+          token: ${{ secrets.GH_PAT }}  # ✅ Use PAT for both checkout & push
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -32,11 +32,4 @@ jobs:
           GH_PAT: ${{ secrets.GH_PAT }}
           REPO: ${{ github.repository }}
         run: |
-          git config user.name "council-spend-bot"
-          git config user.email "council-spend-bot@example.com"
-
-          git add data/ || true
-          git commit -m "Automated data refresh [skip ci]" || echo "No changes to commit"
-
-          git remote set-url origin https://x-access-token:${GH_PAT}@github.com/${REPO}.git
-          git push origin HEAD:$(git rev-parse --abbrev-ref HEAD)
+          git config user.name "council-spend-
