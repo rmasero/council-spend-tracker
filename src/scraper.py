@@ -15,11 +15,12 @@ class CouncilScraper:
                       "(KHTML, like Gecko) Chrome/115.0 Safari/537.36"
     }
 
-    GOV_UK_COUNCILS_URL = "https://www.gov.uk/find-local-council"
+    GOV_UK_COUNCILS_URL = "https://www.gov.uk/browse/housing-local-services/local-councils"
+
     CKAN_SEARCH_URL = "https://data.gov.uk/api/3/action/package_search?q="
 
     def get_known_councils(self):
-        """Fixed fallback to get all councils"""
+        """Retrieve all councils from the GOV.UK page."""
         try:
             r = requests.get(self.GOV_UK_COUNCILS_URL, headers=self.HEADERS, timeout=30)
             r.raise_for_status()
@@ -29,9 +30,8 @@ class CouncilScraper:
             print(f"[DEBUG] Saved gov.uk HTML to {html_path}")
 
             soup = BeautifulSoup(r.text, "html.parser")
-            links = soup.select("a[href*='/local-council/']")
+            links = soup.select("a[href*='/browse/housing-local-services/local-councils/']")
             councils = [link.get_text(strip=True) for link in links if link.get_text(strip=True)]
-            councils = [c for c in councils if c.lower() not in ("local councils and services", "find your local council")]
             councils = list(set(councils))
             print(f"[DEBUG] Retrieved {len(councils)} councils from gov.uk")
             return councils
@@ -40,6 +40,7 @@ class CouncilScraper:
             return []
 
     def find_spend_files_for_council(self, council_name):
+        """Search for spending datasets related to a specific council."""
         try:
             query = f"{council_name} spending over 500"
             r = requests.get(self.CKAN_SEARCH_URL + query, headers=self.HEADERS, timeout=30)
@@ -57,6 +58,7 @@ class CouncilScraper:
             return []
 
     def download_dataset(self, resource):
+        """Download and parse a dataset."""
         url = resource.get("url")
         try:
             r = requests.get(url, headers=self.HEADERS, timeout=30)
@@ -74,7 +76,7 @@ class CouncilScraper:
             return None
 
     def ingest_all_councils(self):
-        """Minimal changes to integrate with existing app"""
+        """Ingest spending data for all councils."""
         councils = self.get_known_councils()
         all_data = []
         for council in councils:
