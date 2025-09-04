@@ -1,72 +1,79 @@
-"""Entry point for ingestion pipeline. Run by GitHub Actions on schedule.
-
-This script:
-- Loads a list of councils (from scripts/councils_list.csv if present, otherwise tries to fetch).
-- Runs scraper to discover candidate spending files (CSV/XLSX).
-- Normalises found files and appends to a processed dataframe.
-- Runs anomaly detection.
-- Writes data/data files and commits are done by the GitHub Action.
-"""
-import os
+#!/usr/bin/env python3
+import sys
 from pathlib import Path
-from scraper import CouncilScraper
-from normalizer import Normalizer
-from anomaly import AnomalyDetector
-import pandas as pd
 from datetime import datetime
+import json
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / 'data'
-DATA_DIR.mkdir(exist_ok=True)
-COUNCILS_CSV = ROOT / 'scripts' / 'councils_list.csv'
+SRC_DIR = ROOT / "src"
+DATA_DIR = ROOT / "data"
+COUNCILS_DIR = DATA_DIR / "councils"
+LOG_FILE = DATA_DIR / "last_run.log"
+LAST_UPDATED = DATA_DIR / "last_updated.txt"
 
-scraper = CouncilScraper()
-normalizer = Normalizer()
-anomaly = AnomalyDetector()
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(SRC_DIR))
 
-councils = []
-if COUNCILS_CSV.exists():
-    councils = pd.read_csv(COUNCILS_CSV)['council'].dropna().tolist()
-else:
-    # fallback: scraper can attempt to fetch major council list
-    councils = scraper.get_known_councils()
+try:
+    from src.scraper import CouncilScraper
+except Exception as e:
+    print(f"[ERROR] Cannot import scraper: {e}")
+    sys.exit(1)
 
-all_rows = []
-for c in councils:
-    print(f"Processing council: {c}")
+def save_df_safe(df, outpath):
     try:
-        files = scraper.find_spend_files_for_council(c)
-        for fmeta in files:
-            df = scraper.download_dataframe(fmeta)
-            if df is None or df.empty:
-                continue
-            std = normalizer.normalize(df, source_meta=fmeta, council=c)
-            all_rows.append(std)
-    except Exception as e:
-        print(f"Error processing {c}: {e}")
+        df.to_csv(outpath, index=False)
+        return True
+    except Exception:
+        try:
+            df.astype(str).to_csv(outpath, index=False)
+            return True
+        except Exception as e:
+            print(f"[ERROR] Failed to save dataframe {outpath}: {e}")
+            return False
 
-if all_rows:
-    processed = pd.concat(all_rows, ignore_index=True)
-else:
-    processed = pd.DataFrame(columns=['council','date','supplier','amount','description','source_url','anomaly_type'])
+def main():
+    COUNCILS_DIR.mkdir(parents=True, exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-processed['date'] = pd.to_datetime(processed['date'], errors='coerce')
-processed['amount'] = pd.to_numeric(processed['amount'], errors='coerce').fillna(0.0)
+    scraper = CouncilScraper()
+    councils = scraper.get_known_councils()
+    print(f"[INFO] Discovered {len(councils)} councils")
 
-# run anomaly detection
-processed = anomaly.run_all(processed)
+    total_ingested = 0
+    details = []
 
-# write outputs
-processed_file = DATA_DIR / 'processed.parquet'
-processed.to_parquet(processed_file, index=False)
+    for council in councils:
+        files = scraper.find_spend_files_for_council(council)
+        if not files:
+            print(f"[INFO] No spending files found for {council}")
+            details.append({"council": council, "found": 0})
+            continue
 
-last_updated = DATA_DIR / 'last_updated.txt'
-last_updated.write_text(datetime.utcnow().isoformat() + 'Z')
+        ingested = 0
+        for f in files:
+            df = scraper.download_dataframe(f)
+            if df is not None and not df.empty:
+                safe_name = council.replace(" ", "_").replace("/", "_").replace("'", "")
+                outpath = COUNCILS_DIR / f"{safe_name}.csv"
+                if save_df_safe(df, outpath):
+                    ingested += 1
+                    total_ingested += 1
+                    break  # only first successful file per council
 
-# also dump per-council CSVs
-councils_dir = DATA_DIR / 'councils'
-councils_dir.mkdir(exist_ok=True)
-for cname, g in processed.groupby('council'):
-    safe = cname.replace('/','_').replace(' ','_')
-    (councils_dir / f"{safe}.csv").to_csv(index=False, path_or_buf=(councils_dir / f"{safe}.csv"))
-print('Ingestion complete.')
+        details.append({"council": council, "found": len(files), "ingested": ingested})
+
+    summary = {
+        "run_at": datetime.utcnow().isoformat() + "Z",
+        "councils_total": len(councils),
+        "total_ingested": total_ingested,
+        "details": details
+    }
+
+    with open(LOG_FILE, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(summary, indent=2))
+
+    with open(LAST_UPDATED, "w", encoding="utf-8") as fh:
+        fh.write(datetime.utcnow().isoformat() + "Z")
+
+    print(f"[DONE] Ingest complete: {total_ingested}/{len(councils)} councils saved")
