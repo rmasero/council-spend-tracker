@@ -18,28 +18,25 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        working-directory: ./CouncilSpendTracker
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Run ingestion script
-        working-directory: ./CouncilSpendTracker
         run: python scripts/ingest.py
 
       - name: Commit and push changes
-        working-directory: ./CouncilSpendTracker
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
           REPO: ${{ github.repository }}
         run: |
-          git config --global user.name "council-spend-bot"
-          git config --global user.email "council-spend-bot@example.com"
+          git config user.name "council-spend-bot"
+          git config user.email "council-spend-bot@example.com"
 
           git add data/ || true
           git commit -m "Automated data refresh [skip ci]" || echo "No changes to commit"
 
-          # ✅ overwrite remote with PAT-based URL
+          # overwrite remote with PAT-based URL
           git remote set-url origin https://x-access-token:${GH_PAT}@github.com/${REPO}.git
 
-          git push origin HEAD:main
+          git push origin HEAD:$(git rev-parse --abbrev-ref HEAD)
