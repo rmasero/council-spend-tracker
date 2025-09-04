@@ -4,18 +4,17 @@ from pathlib import Path
 from datetime import datetime
 import json
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[0]  # repo root
 SRC_DIR = ROOT / "src"
 DATA_DIR = ROOT / "data"
 COUNCILS_DIR = DATA_DIR / "councils"
 LOG_FILE = DATA_DIR / "last_run.log"
 LAST_UPDATED = DATA_DIR / "last_updated.txt"
 
-sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(SRC_DIR))
 
 try:
-    from src.scraper import CouncilScraper
+    from scraper import CouncilScraper
 except Exception as e:
     print(f"[ERROR] Cannot import scraper: {e}")
     sys.exit(1)
@@ -77,3 +76,7 @@ def main():
         fh.write(datetime.utcnow().isoformat() + "Z")
 
     print(f"[DONE] Ingest complete: {total_ingested}/{len(councils)} councils saved")
+    print(f"[DEBUG LOG] Saved to {LOG_FILE}")
+
+if __name__ == "__main__":
+    main()
