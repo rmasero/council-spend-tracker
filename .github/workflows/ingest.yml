@@ -12,7 +12,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
         with:
-          token: ${{ secrets.GH_PAT }}  # ✅ Use PAT for both checkout & push
+          token: ${{ secrets.GH_PAT }}
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -32,4 +32,11 @@ jobs:
           GH_PAT: ${{ secrets.GH_PAT }}
           REPO: ${{ github.repository }}
         run: |
-          git config user.name "council-spend-
+          git config user.name "council-spend-bot"
+          git config user.email "council-spend-bot@example.com"
+
+          git add data/ || true
+          git commit -m "Automated data refresh [skip ci]" || echo "No changes to commit"
+
+          git remote set-url origin https://x-access-token:${GH_PAT}@github.com/${REPO}.git
+          git push origin HEAD:$(git rev-parse --abbrev-ref HEAD)
